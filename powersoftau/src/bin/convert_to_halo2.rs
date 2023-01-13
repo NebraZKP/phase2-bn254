@@ -1,24 +1,20 @@
-extern crate bellman_ce;
-extern crate blake2;
-extern crate byteorder;
-extern crate memmap;
-extern crate powersoftau;
-extern crate rand;
-
-use halo2_proofs::halo2curves::bn256::{Bn256, Fq, Fq2, G1Affine, G2Affine};
-// use powersoftau::bn256::{Bn256CeremonyParameters};
-use powersoftau::batched_accumulator::BachedAccumulator;
-use powersoftau::keypair::keypair;
-use powersoftau::parameters::{CheckForCorrectness, UseCompression};
-use powersoftau::small_bn256::Bn256CeremonyParameters;
+extern crate hex;
+use powersoftau::{
+    batched_accumulator::BatchedAccumulator,
+    keypair::keypair,
+    parameters::{CeremonyParams, CheckForCorrectness, UseCompression},
+    utils::calculate_hash,
+};
 
 use bellman_ce::pairing::bn256::Bn256 as Bn256ce;
-use memmap::*;
-use std::fs::{self, OpenOptions};
+use memmap::MmapOptions;
+use std::{
+    fs::{self, OpenOptions},
+    io::BufWriter,
+};
 
-use std::io::{BufWriter, Read, Write};
-
-use powersoftau::parameters::PowersOfTauParameters;
+use std::io::Write;
+extern crate hex_literal;
 
 const INPUT_IS_COMPRESSED: UseCompression = UseCompression::No;
 const COMPRESS_THE_OUTPUT: UseCompression = UseCompression::Yes;
@@ -29,7 +25,12 @@ use ff::{Field, PrimeField};
 use group::{prime::PrimeCurveAffine, Curve, Group as _};
 use halo2_proofs::{
     arithmetic::{best_fft, best_multiexp, g_to_lagrange, parallelize, CurveExt, FieldExt, Group},
-    halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine},
+    halo2curves::{
+        bn256::{Bn256, Fq, Fq2, G1Affine, G2Affine},
+        pairing::Engine,
+        serde::SerdeObject,
+        CurveAffine,
+    },
     poly::commitment::{Blind, CommitmentScheme, Params, ParamsProver, ParamsVerifier, MSM},
     poly::{Coeff, LagrangeCoeff, Polynomial},
 };
@@ -38,34 +39,54 @@ use std::io;
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
+// convert_to_halo2 powersOfTau28_hez_final.ptau response_beacon 28 8192 [beaconHash] 10
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 7 {
+        println!("Usage: \n<challenge_file> <response_file> <circuit_power> <batch_size> <beacon_hash> <num_iterations_exp>");
+        std::process::exit(exitcode::USAGE);
+    }
+    let challenge_filename = &args[1];
+    let response_filename = &args[2];
+    let circuit_power = args[3].parse().expect("could not parse circuit power");
+    let batch_size = args[4].parse().expect("could not parse batch size");
+    let beacon_hash = &args[5];
+    let num_iterations_exp = &args[6].parse::<usize>().unwrap();
+
+    if *num_iterations_exp < 10 || *num_iterations_exp > 63 {
+        println!("in_num_iterations_exp should be in [10, 63] range");
+        std::process::exit(exitcode::DATAERR);
+    }
+
+    let parameters = CeremonyParams::<Bn256ce>::new(circuit_power, batch_size);
+
     println!(
-        "Will contribute to accumulator for 2^{} powers of tau",
-        Bn256CeremonyParameters::REQUIRED_POWER
+        "Will contribute a random beacon to accumulator for 2^{} powers of tau",
+        parameters.size,
     );
     println!(
         "In total will generate up to {} powers",
-        Bn256CeremonyParameters::TAU_POWERS_G1_LENGTH
+        parameters.powers_g1_length,
     );
 
-    // Try to load `./challenge` from disk.
+    // Try to load challenge file from disk.
     let reader = OpenOptions::new()
         .read(true)
-        .open("challenge")
-        .expect("unable open `./challenge` in this directory");
+        .open(challenge_filename)
+        .expect("unable open challenge file in this directory");
 
     {
         let metadata = reader
             .metadata()
-            .expect("unable to get filesystem metadata for `./challenge`");
+            .expect("unable to get filesystem metadata for challenge file");
         let expected_challenge_length = match INPUT_IS_COMPRESSED {
-            UseCompression::Yes => Bn256CeremonyParameters::CONTRIBUTION_BYTE_SIZE,
-            UseCompression::No => Bn256CeremonyParameters::ACCUMULATOR_BYTE_SIZE,
+            UseCompression::Yes => parameters.contribution_size,
+            UseCompression::No => parameters.accumulator_size,
         };
 
         if metadata.len() != (expected_challenge_length as u64) {
             panic!(
-                "The size of `./challenge` should be {}, but it's {}, so something isn't right.",
+                "The size of challenge file should be {}, but it's {}, so something isn't right.",
                 expected_challenge_length,
                 metadata.len()
             );
@@ -78,14 +99,15 @@ fn main() {
             .expect("unable to create a memory map for input")
     };
 
-    let accumulator = BachedAccumulator::<Bn256ce, Bn256CeremonyParameters>::deserialize(
+    let accumulator = BatchedAccumulator::<Bn256ce>::deserialize(
         &readable_map,
-        CheckForCorrectness::Yes,
+        CHECK_INPUT_CORRECTNESS,
         INPUT_IS_COMPRESSED,
+        &parameters,
     )
     .expect("must transform with the key");
 
-    let k: u32 = Bn256CeremonyParameters::REQUIRED_POWER as u32;
+    let k = circuit_power as u32;
     assert!(k <= <Bn256 as Engine>::Scalar::S);
     let n: u64 = 1 << k;
 

@@ -20,6 +20,9 @@ typenum = "1.9.0"
 byteorder = "1.1.0"
 hex-literal = "0.1"
 rust-crypto = "0.2"
+ff = "0.12"
+group = "0.12"
+halo2_proofs = { git = "https://github.com/axiom-crypto/halo2.git", branch = "axiom/faster-witness-generation", default-features = false, features = ["batch", "serde-raw"] }
 
 memmap = "0.7.0"
 itertools = "0.8.0"

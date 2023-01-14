@@ -116,8 +116,7 @@ fn main() {
         Fq::from_raw([x[3], x[2], x[1], x[0]])
     };
 
-    let g = accumulator
-        .tau_powers_g1
+    let g = accumulator.tau_powers_g1[..n as usize]
         .into_iter()
         .map(|g| {
             let x = fq_ce_to_fq(g.get_x());

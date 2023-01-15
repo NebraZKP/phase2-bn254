@@ -1,13 +1,13 @@
 extern crate hex;
+use bellman_ce::pairing::bn256::Bn256 as Bn256ce;
+use memmap::MmapOptions;
 use powersoftau::{
     batched_accumulator::BatchedAccumulator,
     keypair::keypair,
     parameters::{CeremonyParams, CheckForCorrectness, UseCompression},
     utils::calculate_hash,
 };
-
-use bellman_ce::pairing::bn256::Bn256 as Bn256ce;
-use memmap::MmapOptions;
+use rayon::prelude::*;
 use std::{
     fs::{self, OpenOptions},
     io::BufWriter,
@@ -99,7 +99,7 @@ fn main() {
             .expect("unable to create a memory map for input")
     };
 
-    let accumulator = BatchedAccumulator::<Bn256ce>::deserialize(
+    let mut accumulator = BatchedAccumulator::<Bn256ce>::deserialize(
         &readable_map,
         CHECK_INPUT_CORRECTNESS,
         INPUT_IS_COMPRESSED,
@@ -107,25 +107,34 @@ fn main() {
     )
     .expect("must transform with the key");
 
-    let k = circuit_power as u32;
+    let largest_k = 25;
+    let k = largest_k; // circuit_power as u32;
     assert!(k <= <Bn256 as Engine>::Scalar::S);
     let n: u64 = 1 << k;
 
     let fq_ce_to_fq = |x: bellman_ce::pairing::bn256::Fq| {
+        // raw montgomery form, LE
         let x = x.0 .0;
-        Fq::from_raw([x[3], x[2], x[1], x[0]])
+        let mut bytes = [0u8; 32];
+        for i in 0..4 {
+            bytes[i * 8..(i + 1) * 8].copy_from_slice(&x[i].to_le_bytes());
+        }
+        Fq::from_raw_bytes(&bytes).unwrap()
     };
-
-    let g = accumulator.tau_powers_g1[..n as usize]
-        .into_iter()
+    println!("finished reading challenge file");
+    accumulator.tau_powers_g1.truncate(n as usize);
+    let g = accumulator
+        .tau_powers_g1
+        .into_par_iter()
         .map(|g| {
             let x = fq_ce_to_fq(g.get_x());
             let y = fq_ce_to_fq(g.get_y());
             G1Affine { x, y }
         })
         .collect::<Vec<_>>();
-
+    println!("g_to_lagrange");
     let g_lagrange = g_to_lagrange::<G1Affine>(g.iter().map(|g| g.to_curve()).collect(), k);
+    println!("finish g_to_lagrange");
 
     let g2_ce_to_g2 = |g2: bellman_ce::pairing::bn256::G2Affine| {
         let x = g2.get_x();
@@ -155,11 +164,11 @@ fn main() {
     fs::create_dir_all("params").unwrap();
     params
         .write(&mut BufWriter::new(
-            fs::File::create("params/kzg_bn254_28.srs").unwrap(),
+            fs::File::create(format!("params/kzg_bn254_{k}.srs")).unwrap(),
         ))
         .unwrap();
-    println!("Wrote params/kzg_bn254_28.srs");
-    for k in (18..28).rev() {
+    println!("Wrote params/kzg_bn254_{k}.srs");
+    for k in (18..largest_k).rev() {
         params.downsize(k);
         params
             .write(&mut BufWriter::new(

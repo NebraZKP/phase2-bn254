@@ -39,7 +39,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
-// convert_to_halo2 powersOfTau28_hez_final.ptau response_beacon 28 8192 [beaconHash] 10
+// convert_to_halo2 challenge_0072.ptau response_beacon 28 8192 [beaconHash] 10
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 7 {

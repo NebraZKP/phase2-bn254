@@ -37,7 +37,7 @@ use std::io;
 // convert_to_halo2 challenge_0078.ptau 28 2097152
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 7 {
+    if args.len() != 4 {
         println!("Usage: \n<challenge_file> <circuit_power> <batch_size>");
         std::process::exit(exitcode::USAGE);
     }

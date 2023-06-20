@@ -3,9 +3,7 @@ use bellman_ce::pairing::bn256::Bn256 as Bn256ce;
 use memmap::MmapOptions;
 use powersoftau::{
     batched_accumulator::BatchedAccumulator,
-    keypair::keypair,
     parameters::{CeremonyParams, CheckForCorrectness, UseCompression},
-    utils::calculate_hash,
 };
 use rayon::prelude::*;
 use std::{
@@ -13,50 +11,39 @@ use std::{
     io::BufWriter,
 };
 
-use std::io::Write;
 extern crate hex_literal;
 
 const INPUT_IS_COMPRESSED: UseCompression = UseCompression::No;
-const COMPRESS_THE_OUTPUT: UseCompression = UseCompression::Yes;
+// const COMPRESS_THE_OUTPUT: UseCompression = UseCompression::Yes;
 const CHECK_INPUT_CORRECTNESS: CheckForCorrectness = CheckForCorrectness::No;
 
 // from halo2
-use ff::{Field, PrimeField};
-use group::{prime::PrimeCurveAffine, Curve, Group as _};
+use ff::PrimeField;
+use group::prime::PrimeCurveAffine;
 use halo2_proofs::{
-    arithmetic::{best_fft, best_multiexp, g_to_lagrange, parallelize, CurveExt, FieldExt, Group},
+    arithmetic::{best_multiexp, g_to_lagrange},
     halo2curves::{
         bn256::{Bn256, Fq, Fq2, G1Affine, G2Affine},
         pairing::Engine,
         serde::SerdeObject,
         CurveAffine,
     },
-    poly::commitment::{Blind, CommitmentScheme, Params, ParamsProver, ParamsVerifier, MSM},
-    poly::{Coeff, LagrangeCoeff, Polynomial},
+    poly::commitment::Blind,
+    poly::{LagrangeCoeff, Polynomial},
 };
 use std::fmt::Debug;
 use std::io;
-use std::marker::PhantomData;
-use std::ops::{Add, AddAssign, Mul, MulAssign};
 
-// convert_to_halo2 challenge_0072.ptau response_beacon 28 8192 [beaconHash] 10
+// convert_to_halo2 challenge_0078.ptau 28 2097152
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 7 {
-        println!("Usage: \n<challenge_file> <response_file> <circuit_power> <batch_size> <beacon_hash> <num_iterations_exp>");
+        println!("Usage: \n<challenge_file> <circuit_power> <batch_size>");
         std::process::exit(exitcode::USAGE);
     }
     let challenge_filename = &args[1];
-    let response_filename = &args[2];
-    let circuit_power = args[3].parse().expect("could not parse circuit power");
-    let batch_size = args[4].parse().expect("could not parse batch size");
-    let beacon_hash = &args[5];
-    let num_iterations_exp = &args[6].parse::<usize>().unwrap();
-
-    if *num_iterations_exp < 10 || *num_iterations_exp > 63 {
-        println!("in_num_iterations_exp should be in [10, 63] range");
-        std::process::exit(exitcode::DATAERR);
-    }
+    let circuit_power = args[2].parse().expect("could not parse circuit power");
+    let batch_size = args[3].parse().expect("could not parse batch size");
 
     let parameters = CeremonyParams::<Bn256ce>::new(circuit_power, batch_size);
 
@@ -168,7 +155,7 @@ fn main() {
         ))
         .unwrap();
     println!("Wrote params/kzg_bn254_{k}.srs");
-    for k in (18..largest_k).rev() {
+    for k in (5..largest_k).rev() {
         params.downsize(k);
         params
             .write(&mut BufWriter::new(
@@ -190,7 +177,7 @@ pub struct ParamsKZG<E: Engine> {
     pub s_g2: E::G2Affine,
 }
 
-impl<'params, E: Engine + Debug> ParamsKZG<E>
+impl<E: Engine + Debug> ParamsKZG<E>
 where
     E::G1Affine: SerdeCurveAffine,
     E::G2Affine: SerdeCurveAffine,

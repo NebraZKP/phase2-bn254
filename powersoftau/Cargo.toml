@@ -23,7 +23,7 @@ hex-literal = "0.2.1"
 rust-crypto = "0.2"
 ff = "0.12"
 group = "0.12"
-halo2_proofs = { git = "https://github.com/axiom-crypto/halo2.git", branch = "axiom/faster-witness-generation", default-features = false, features = ["batch", "serde-raw"] }
+halo2_proofs = { git = "https://github.com/axiom-crypto/halo2.git", rev = "98bc83b" }
 exitcode = "1.1.2"
 hex = "0.4.0"
 rayon = "1.6.1"

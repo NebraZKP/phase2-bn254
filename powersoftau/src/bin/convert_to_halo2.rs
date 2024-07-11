@@ -34,23 +34,27 @@ use halo2_proofs::{
 use std::fmt::Debug;
 use std::io;
 
-// convert_to_halo2 challenge_0078.ptau 28 2097152
+// Usage:
+// convert_to_halo2 <challenge_file> <batch_size> <circuit_power_0> <circuit_power_1> ... <circuit_power_n>
+// Example:
+// convert_to_halo2 challenge_0087 2097152 24 23 19
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 4 {
-        println!("Usage: \n<challenge_file> <circuit_power> <batch_size>");
-        std::process::exit(exitcode::USAGE);
-    }
     let challenge_filename = &args[1];
-    let circuit_power = args[2].parse().expect("could not parse circuit power");
-    let batch_size = args[3].parse().expect("could not parse batch size");
-
-    let parameters = CeremonyParams::<Bn256ce>::new(circuit_power, batch_size);
-
+    let batch_size = args[2].parse().expect("could not parse batch size");
+    let mut circuit_powers: Vec<u32> = args[3..]
+        .iter()
+        .map(|x| x.parse().expect("could not parse circuit power"))
+        .collect::<Vec<_>>();
+    circuit_powers.sort();
+    circuit_powers.reverse();
     println!(
-        "Will contribute a random beacon to accumulator for 2^{} powers of tau",
-        parameters.size,
+        "Deriving Halo2 params for circuit powers: {:?}",
+        circuit_powers
     );
+    const PPOT_SRS_SIZE_BITS: usize = 28;
+    let parameters = CeremonyParams::<Bn256ce>::new(PPOT_SRS_SIZE_BITS, batch_size);
+
     println!(
         "In total will generate up to {} powers",
         parameters.powers_g1_length,
@@ -94,8 +98,7 @@ fn main() {
     )
     .expect("must transform with the key");
 
-    let largest_k = 25;
-    let k = largest_k; // circuit_power as u32;
+    let k = circuit_powers[0]; // largest circuit power
     assert!(k <= <Bn256 as Engine>::Scalar::S);
     let n: u64 = 1 << k;
 
@@ -155,8 +158,8 @@ fn main() {
         ))
         .unwrap();
     println!("Wrote params/kzg_bn254_{k}.srs");
-    for k in (5..largest_k).rev() {
-        params.downsize(k);
+    for k in circuit_powers.iter().skip(1) {
+        params.downsize(*k);
         params
             .write(&mut BufWriter::new(
                 fs::File::create(format!("params/kzg_bn254_{k}.srs")).unwrap(),

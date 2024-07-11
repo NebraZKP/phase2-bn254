@@ -33,3 +33,5 @@ itertools = "0.9.0"
 
 bellman_ce = { path = "../bellman" }
 log = "0.4.8"
+
+[workspace]
